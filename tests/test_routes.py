@@ -1,6 +1,3 @@
-import pytest
-
-
 class TestHealthEndpoint:
     def test_health_check(self, client):
         response = client.get("/api/v1/health")
@@ -18,7 +15,9 @@ class TestHealthEndpoint:
 
 class TestAuthentication:
     def test_missing_api_key(self, client, sample_portfolio_data):
-        response = client.post("/api/v1/optimize/max-sharpe", json=sample_portfolio_data)
+        response = client.post(
+            "/api/v1/optimize/max-sharpe", json=sample_portfolio_data
+        )
         assert response.status_code == 401
 
     def test_wrong_api_key(self, client, sample_portfolio_data):
@@ -32,7 +31,11 @@ class TestAuthentication:
 
 class TestMaxSharpeEndpoint:
     def test_successful_optimization(self, client, sample_portfolio_data, auth_header):
-        response = client.post("/api/v1/optimize/max-sharpe", json=sample_portfolio_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/max-sharpe",
+            json=sample_portfolio_data,
+            headers=auth_header,
+        )
         assert response.status_code == 200
 
         data = response.json()
@@ -47,7 +50,9 @@ class TestMaxSharpeEndpoint:
             **sample_portfolio_data,
             "constraints": {"min_weight": 0.1, "max_weight": 0.4},
         }
-        response = client.post("/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header
+        )
         assert response.status_code == 200
 
         data = response.json()
@@ -63,11 +68,15 @@ class TestMaxSharpeEndpoint:
                 "current_weights": [0.2, 0.2, 0.2, 0.2, 0.2],
             },
         }
-        response = client.post("/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header
+        )
         assert response.status_code == 200
 
     def test_invalid_request(self, client, auth_header):
-        response = client.post("/api/v1/optimize/max-sharpe", json={}, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/max-sharpe", json={}, headers=auth_header
+        )
         assert response.status_code == 422  # validation error
 
     def test_infeasible_constraints(self, client, auth_header):
@@ -81,14 +90,18 @@ class TestMaxSharpeEndpoint:
                 "max_weight": 1.0,
             },
         }
-        response = client.post("/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header
+        )
         assert response.status_code == 400
 
 
 class TestMinVolatilityEndpoint:
     def test_successful_optimization(self, client, sample_portfolio_data, auth_header):
         response = client.post(
-            "/api/v1/optimize/min-volatility", json=sample_portfolio_data, headers=auth_header
+            "/api/v1/optimize/min-volatility",
+            json=sample_portfolio_data,
+            headers=auth_header,
         )
         assert response.status_code == 200
 
@@ -107,7 +120,9 @@ class TestMinVolatilityEndpoint:
                 "max_weight": 1.0,
             },
         }
-        response = client.post("/api/v1/optimize/min-volatility", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/min-volatility", json=request_data, headers=auth_header
+        )
         assert response.status_code == 400
 
     def test_with_sector_constraints(self, client, auth_header):
@@ -133,14 +148,18 @@ class TestMinVolatilityEndpoint:
                 "sector_lower": {"Finance": 0.20},
             },
         }
-        response = client.post("/api/v1/optimize/min-volatility", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/min-volatility", json=request_data, headers=auth_header
+        )
         assert response.status_code == 200
 
 
 class TestEfficientReturnEndpoint:
     def test_successful_optimization(self, client, sample_portfolio_data, auth_header):
         request_data = {**sample_portfolio_data, "target_return": 0.11}
-        response = client.post("/api/v1/optimize/efficient-return", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/efficient-return", json=request_data, headers=auth_header
+        )
         assert response.status_code == 200
 
         data = response.json()
@@ -148,29 +167,39 @@ class TestEfficientReturnEndpoint:
 
     def test_without_target_return(self, client, sample_portfolio_data, auth_header):
         response = client.post(
-            "/api/v1/optimize/efficient-return", json=sample_portfolio_data, headers=auth_header
+            "/api/v1/optimize/efficient-return",
+            json=sample_portfolio_data,
+            headers=auth_header,
         )
         assert response.status_code == 400
 
     def test_infeasible_target_return(self, client, sample_portfolio_data, auth_header):
         # Target return higher than any individual asset
         request_data = {**sample_portfolio_data, "target_return": 0.50}
-        response = client.post("/api/v1/optimize/efficient-return", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/efficient-return", json=request_data, headers=auth_header
+        )
         assert response.status_code == 400
 
 
 class TestEfficientRiskEndpoint:
     def test_successful_optimization(self, client, sample_portfolio_data, auth_header):
         request_data = {**sample_portfolio_data, "target_volatility": 0.18}
-        response = client.post("/api/v1/optimize/efficient-risk", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/efficient-risk", json=request_data, headers=auth_header
+        )
         assert response.status_code == 200
 
         data = response.json()
         assert abs(data["volatility"] - 0.18) < 0.02
 
-    def test_without_target_volatility(self, client, sample_portfolio_data, auth_header):
+    def test_without_target_volatility(
+        self, client, sample_portfolio_data, auth_header
+    ):
         response = client.post(
-            "/api/v1/optimize/efficient-risk", json=sample_portfolio_data, headers=auth_header
+            "/api/v1/optimize/efficient-risk",
+            json=sample_portfolio_data,
+            headers=auth_header,
         )
         assert response.status_code == 400
 
@@ -182,7 +211,9 @@ class TestEdgeCases:
             "expected_returns": [0.10, 0.15],
             "covariance_matrix": [[0.04, 0.01], [0.01, 0.06]],
         }
-        response = client.post("/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header
+        )
         assert response.status_code == 200
 
         data = response.json()
@@ -195,7 +226,9 @@ class TestEdgeCases:
             "expected_returns": [0.10],
             "covariance_matrix": [[0.04]],
         }
-        response = client.post("/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header
+        )
         assert response.status_code == 200
 
         data = response.json()
@@ -211,7 +244,9 @@ class TestEdgeCases:
                 [0.005, 0.01, 0.03],
             ],
         }
-        response = client.post("/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header
+        )
         assert response.status_code == 200
 
         data = response.json()
@@ -220,7 +255,9 @@ class TestEdgeCases:
 
     def test_custom_risk_free_rate(self, client, small_portfolio_data, auth_header):
         request_data = {**small_portfolio_data, "risk_free_rate": 0.05}
-        response = client.post("/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header
+        )
         assert response.status_code == 200
 
     def test_allowing_short_selling(self, client, auth_header):
@@ -234,5 +271,7 @@ class TestEdgeCases:
             ],
             "constraints": {"min_weight": -0.5, "max_weight": 1.5},
         }
-        response = client.post("/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header)
+        response = client.post(
+            "/api/v1/optimize/max-sharpe", json=request_data, headers=auth_header
+        )
         assert response.status_code == 200

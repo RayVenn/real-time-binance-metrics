@@ -1,0 +1,11 @@
+Portfolio Optimizer has been deployed.
+
+Release: {{ .Release.Name }}
+Image:   {{ .Values.image.repository }}:{{ .Values.image.tag }}
+
+To access the application:
+  kubectl port-forward svc/{{ include "portfolio-optimizer.fullname" . }} 8000:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+
+Then visit:
+  Swagger UI:   http://localhost:8000/docs
+  Health check: http://localhost:8000/api/v1/health

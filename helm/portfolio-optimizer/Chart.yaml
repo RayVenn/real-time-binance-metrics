@@ -1,0 +1,6 @@
+apiVersion: v2
+name: portfolio-optimizer
+description: Mean-Variance Portfolio Optimization Service
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,6 +1,10 @@
 import pytest
 
-from app.models.portfolio import PortfolioConstraints, PortfolioRequest, TransactionCosts
+from app.models.portfolio import (
+    PortfolioConstraints,
+    PortfolioRequest,
+    TransactionCosts,
+)
 from app.services.optimizer import (
     _get_weight_bounds,
     _create_efficient_frontier,
@@ -23,9 +27,7 @@ class TestGetWeightBounds:
         assert bounds == (0.05, 0.40)
 
     def test_with_custom_weight_bounds(self):
-        constraints = PortfolioConstraints(
-            weight_bounds=[(0.1, 0.3), (0.2, 0.5)]
-        )
+        constraints = PortfolioConstraints(weight_bounds=[(0.1, 0.3), (0.2, 0.5)])
         bounds = _get_weight_bounds(constraints)
         assert bounds == [(0.1, 0.3), (0.2, 0.5)]
 

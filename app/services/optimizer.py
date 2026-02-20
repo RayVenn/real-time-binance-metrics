@@ -5,7 +5,11 @@ import pandas as pd
 from pypfopt import objective_functions
 from pypfopt.efficient_frontier import EfficientFrontier
 
-from app.models.portfolio import OptimizationResult, PortfolioConstraints, PortfolioRequest
+from app.models.portfolio import (
+    OptimizationResult,
+    PortfolioConstraints,
+    PortfolioRequest,
+)
 
 
 def _get_weight_bounds(constraints: Optional[PortfolioConstraints]) -> tuple:
@@ -98,7 +102,9 @@ def optimize_efficient_return(request: PortfolioRequest) -> OptimizationResult:
 def optimize_efficient_risk(request: PortfolioRequest) -> OptimizationResult:
     """Optimize portfolio for a target volatility with maximum return."""
     if request.target_volatility is None:
-        raise ValueError("target_volatility is required for efficient_risk optimization")
+        raise ValueError(
+            "target_volatility is required for efficient_risk optimization"
+        )
 
     ef = _create_efficient_frontier(request)
     ef.efficient_risk(target_volatility=request.target_volatility)
