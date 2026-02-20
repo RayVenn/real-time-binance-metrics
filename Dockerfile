@@ -1,5 +1,5 @@
 # ===== Stage 1: Builder =====
-FROM ghcr.io/astral-sh/uv:python3.9-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ COPY app/ ./app/
 RUN uv sync --frozen --no-dev
 
 # ===== Stage 2: Runtime =====
-FROM python:3.9-slim-bookworm AS runtime
+FROM python:3.13-slim-bookworm AS runtime
 
 WORKDIR /app
 
