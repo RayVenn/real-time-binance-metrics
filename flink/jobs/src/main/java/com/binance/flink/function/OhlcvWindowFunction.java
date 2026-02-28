@@ -20,7 +20,10 @@ public class OhlcvWindowFunction
                         Iterable<OhlcvBar> elements,
                         Collector<OhlcvBar> out) {
         OhlcvBar bar = elements.iterator().next();
-        bar.symbol       = symbol;
+        // key format: "BTCUSDT~BINANCE"
+        String[] parts    = symbol.split("~", 2);
+        bar.symbol        = parts[0];
+        bar.source        = parts.length > 1 ? parts[1] : "UNKNOWN";
         bar.windowStartMs = ctx.window().getStart();
         bar.windowEndMs   = ctx.window().getEnd();
         out.collect(bar);

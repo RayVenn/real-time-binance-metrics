@@ -23,6 +23,7 @@ public class BinanceTrade implements Serializable {
     @JsonProperty("t") public long    tradeId;
 
     // Added by producer — use field names directly
-    public long ingestionTimeMs;
-    public long latencyMs;
+    public String source;
+    public long   ingestionTimeMs;
+    public long   latencyMs;
 }

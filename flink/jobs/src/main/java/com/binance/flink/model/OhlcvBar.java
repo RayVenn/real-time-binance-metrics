@@ -7,6 +7,7 @@ import java.io.Serializable;
  */
 public class OhlcvBar implements Serializable {
     public String symbol;
+    public String source;
     public long   windowStartMs;
     public long   windowEndMs;
     public double open, high, low, close, volume;

@@ -1,8 +1,8 @@
 package com.binance.producer.kafka;
 
 import com.binance.producer.Config;
-import com.binance.producer.model.BinanceTrade;
 import com.binance.producer.model.DlqMessage;
+import com.binance.producer.model.Trade;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -39,7 +39,7 @@ public class KafkaProducerClient {
         this.dlqTopic  = config.kafkaDlqTopic;
     }
 
-    public void produceTrade(BinanceTrade trade) {
+    public void produceTrade(Trade trade) {
         try {
             String json = mapper.writeValueAsString(trade);
             producer.send(new ProducerRecord<>(topic, trade.symbol, json), (meta, err) -> {

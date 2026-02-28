@@ -1,7 +1,7 @@
 package com.binance.producer.ws;
 
 import com.binance.producer.Config;
-import com.binance.producer.model.BinanceTrade;
+import com.binance.producer.model.Trade;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.java_websocket.client.WebSocketClient;
@@ -22,7 +22,7 @@ public class BinanceWebSocketClient extends WebSocketClient {
     private static final Logger log = LoggerFactory.getLogger(BinanceWebSocketClient.class);
 
     private final Config                    config;
-    private final Consumer<BinanceTrade>    onTrade;
+    private final Consumer<Trade>    onTrade;
     private final Consumer<String>          onRawError;
     private final ObjectMapper              mapper   = new ObjectMapper();
     private final ScheduledExecutorService  scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -30,7 +30,7 @@ public class BinanceWebSocketClient extends WebSocketClient {
     private volatile boolean                closed   = false;
 
     public BinanceWebSocketClient(Config config,
-                                  Consumer<BinanceTrade> onTrade,
+                                  Consumer<Trade> onTrade,
                                   Consumer<String> onRawError) {
         super(buildUri(config));
         this.config       = config;
@@ -59,8 +59,9 @@ public class BinanceWebSocketClient extends WebSocketClient {
             // Combined stream wraps each event: {"stream":"...", "data":{...}}
             JsonNode root = mapper.readTree(raw);
             JsonNode data = root.has("data") ? root.get("data") : root;
-            BinanceTrade trade = mapper.treeToValue(data, BinanceTrade.class);
+            Trade trade = mapper.treeToValue(data, Trade.class);
             trade.enrich();
+            trade.source = "BINANCE";
             onTrade.accept(trade);
         } catch (Exception e) {
             log.warn("ws.parse_error error={}", e.getMessage());

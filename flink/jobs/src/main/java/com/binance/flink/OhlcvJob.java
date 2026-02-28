@@ -28,6 +28,14 @@ public class OhlcvJob {
     private static final DateTimeFormatter FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC);
 
+    /**
+     * Normalize symbol so trades from different exchanges combine into one key.
+     * e.g. BTCUSDT (Binance) and BTCUSD (Coinbase) both become BTCUSD.
+     */
+    private static String canonicalSymbol(String symbol) {
+        return symbol.endsWith("USDT") ? symbol.substring(0, symbol.length() - 1) : symbol;
+    }
+
     public static void main(String[] args) throws Exception {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setRuntimeMode(RuntimeExecutionMode.STREAMING);
@@ -36,13 +44,15 @@ public class OhlcvJob {
 
         String bootstrapServers = System.getenv().getOrDefault(
                 "KAFKA_BOOTSTRAP_SERVERS", "kafka:29092");
+        String kafkaTopic = System.getenv().getOrDefault(
+                "KAFKA_TOPIC", "crypto-trades");
         String clickhouseUrl = System.getenv().getOrDefault(
                 "CLICKHOUSE_URL", "jdbc:clickhouse://clickhouse:8123/binance");
 
         // ── Source ────────────────────────────────────────────────────────────
         KafkaSource<String> kafkaSource = KafkaSource.<String>builder()
                 .setBootstrapServers(bootstrapServers)
-                .setTopics("binance-trades")
+                .setTopics(kafkaTopic)
                 .setGroupId("flink-ohlcv")
                 .setStartingOffsets(OffsetsInitializer.latest())
                 .setValueOnlyDeserializer(new SimpleStringSchema())
@@ -51,38 +61,43 @@ public class OhlcvJob {
         DataStream<String> rawStream = env.fromSource(
                 kafkaSource,
                 WatermarkStrategy.noWatermarks(),
-                "binance-trades");
+                kafkaTopic);
 
         // ── Parse JSON ────────────────────────────────────────────────────────
         ObjectMapper mapper = new ObjectMapper();
         DataStream<BinanceTrade> trades = rawStream.map(
                 json -> mapper.readValue(json, BinanceTrade.class));
 
-        // ── Watermark strategy ────────────────────────────────────────────────
+        // ── Watermark strategy (assigned once; both streams share it) ─────────
         WatermarkStrategy<BinanceTrade> watermarkStrategy = WatermarkStrategy
                 .<BinanceTrade>forBoundedOutOfOrderness(Duration.ofSeconds(5))
                 .withTimestampAssigner((trade, ts) -> trade.tradeTimeMs);
 
-        // ── Window + aggregate ────────────────────────────────────────────────
-        DataStream<OhlcvBar> ohlcv = trades
-                .assignTimestampsAndWatermarks(watermarkStrategy)
-                .keyBy(t -> t.symbol)
+        DataStream<BinanceTrade> timedTrades =
+                trades.assignTimestampsAndWatermarks(watermarkStrategy);
+
+        // ── Window + aggregate — all exchanges merged, keyed by canonical symbol ─
+        // Trades from all exchanges are combined in event-time order so open/close
+        // are truly cross-exchange accurate. source is set to "ALL" by the key format.
+        DataStream<OhlcvBar> ohlcv = timedTrades
+                .keyBy(t -> canonicalSymbol(t.symbol) + "~ALL")
                 .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
                 .aggregate(new OhlcvAggregator(), new OhlcvWindowFunction());
 
         // ── Sink 1: ClickHouse via JDBC ───────────────────────────────────────
         ohlcv.addSink(JdbcSink.sink(
-                "INSERT INTO ohlcv (symbol, window_start, open, high, low, close, volume, trade_count) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO ohlcv (symbol, source, window_start, open, high, low, close, volume, trade_count) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (ps, bar) -> {
                     ps.setString(1, bar.symbol);
-                    ps.setTimestamp(2, new Timestamp(bar.windowStartMs));
-                    ps.setDouble(3, bar.open);
-                    ps.setDouble(4, bar.high);
-                    ps.setDouble(5, bar.low);
-                    ps.setDouble(6, bar.close);
-                    ps.setDouble(7, bar.volume);
-                    ps.setInt(8, bar.tradeCount);
+                    ps.setString(2, bar.source);
+                    ps.setTimestamp(3, new Timestamp(bar.windowStartMs));
+                    ps.setDouble(4, bar.open);
+                    ps.setDouble(5, bar.high);
+                    ps.setDouble(6, bar.low);
+                    ps.setDouble(7, bar.close);
+                    ps.setDouble(8, bar.volume);
+                    ps.setInt(9, bar.tradeCount);
                 },
                 JdbcExecutionOptions.builder()
                         .withBatchSize(100)
@@ -99,8 +114,8 @@ public class OhlcvJob {
 
         // ── Sink 2: stdout ────────────────────────────────────────────────────
         ohlcv.map(bar -> String.format(
-                "%s | %s UTC | O=%10.2f  H=%10.2f  L=%10.2f  C=%10.2f  V=%10.5f  n=%d",
-                bar.symbol,
+                "%s | %s | %s UTC | O=%10.2f  H=%10.2f  L=%10.2f  C=%10.2f  V=%10.5f  n=%d",
+                bar.source, bar.symbol,
                 FMT.format(Instant.ofEpochMilli(bar.windowStartMs)),
                 bar.open, bar.high, bar.low, bar.close, bar.volume, bar.tradeCount
         )).print();

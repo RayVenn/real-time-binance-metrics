@@ -9,12 +9,7 @@
     {
       "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto"},
       "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "lineWidth": 1,
-            "fillOpacity": 10
-          }
-        },
+        "defaults": {"custom": {"lineWidth": 1, "fillOpacity": 10}},
         "overrides": []
       },
       "gridPos": {"h": 14, "w": 24, "x": 0, "y": 0},
@@ -22,40 +17,29 @@
       "options": {
         "candleStyle": "candles",
         "colorStrategy": "open-close",
-        "colors": {
-          "down": "red",
-          "up": "green"
-        },
-        "fields": {
-          "close": "close",
-          "high": "high",
-          "low": "low",
-          "open": "open"
-        },
+        "colors": {"down": "red", "up": "green"},
+        "fields": {"close": "close", "high": "high", "low": "low", "open": "open"},
         "includeAllFields": false,
         "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false},
-        "tooltip": {"mode": "multi", "sort": "none"}
+        "tooltip": {"mode": "single", "sort": "none"}
       },
       "targets": [
         {
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto"},
-          "rawSql": "SELECT window_start AS time, open, high, low, close FROM binance.ohlcv WHERE symbol = 'BTCUSDT' AND $__timeFilter(window_start) ORDER BY window_start",
+          "rawSql": "SELECT window_start AS time, open, high, low, close FROM binance.ohlcv WHERE source = 'ALL' AND $__timeFilter(window_start) ORDER BY window_start",
           "refId": "A",
           "format": 1
         }
       ],
-      "title": "BTC/USDT 1-Minute Candlestick",
+      "title": "BTC 1-Min OHLCV (All Exchanges)",
       "type": "candlestick"
     },
     {
       "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto"},
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "fixed", "fixedColor": "blue"},
-          "custom": {
-            "fillOpacity": 80,
-            "lineWidth": 1
-          },
+          "color": {"mode": "fixed", "fixedColor": "purple"},
+          "custom": {"fillOpacity": 80, "lineWidth": 1},
           "unit": "short"
         },
         "overrides": []
@@ -64,7 +48,7 @@
       "id": 2,
       "options": {
         "barRadius": 0,
-        "barWidth": 0.8,
+        "barWidth": 0.6,
         "fullHighlight": false,
         "groupWidth": 0.7,
         "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false},
@@ -78,12 +62,12 @@
       "targets": [
         {
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto"},
-          "rawSql": "SELECT window_start AS time, volume FROM binance.ohlcv WHERE symbol = 'BTCUSDT' AND $__timeFilter(window_start) ORDER BY window_start",
+          "rawSql": "SELECT window_start AS time, volume FROM binance.ohlcv WHERE source = 'ALL' AND $__timeFilter(window_start) ORDER BY window_start",
           "refId": "A",
           "format": 1
         }
       ],
-      "title": "Volume (BTC)",
+      "title": "BTC Volume (All Exchanges)",
       "type": "barchart"
     }
   ],
@@ -94,7 +78,7 @@
   "time": {"from": "now-1h", "to": "now"},
   "timepicker": {},
   "timezone": "utc",
-  "title": "BTC/USDT 1-Minute OHLCV",
+  "title": "BTC 1-Minute OHLCV",
   "uid": "btcusdt-ohlcv-1m",
-  "version": 2
+  "version": 8
 }
