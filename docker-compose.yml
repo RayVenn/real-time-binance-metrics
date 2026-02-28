@@ -29,21 +29,22 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+    env_file: .env
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
-        echo "Creating Kafka topics..."
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
-          --topic binance-trades \
-          --partitions 3 \
-          --replication-factor 1 \
-          --config retention.ms=86400000
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
-          --topic binance-trades-dlq \
-          --partitions 1 \
-          --replication-factor 1 \
-          --config retention.ms=604800000
-        echo "Topics created:"
+        echo "Creating Kafka topics from KAFKA_TOPICS=$$KAFKA_TOPICS"
+        IFS=',' read -ra TOPICS <<< "$$KAFKA_TOPICS"
+        for entry in "$${TOPICS[@]}"; do
+          IFS=':' read -r name partitions retention <<< "$$entry"
+          echo "  creating topic=$$name partitions=$$partitions retention_ms=$$retention"
+          kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
+            --topic "$$name" \
+            --partitions "$$partitions" \
+            --replication-factor 1 \
+            --config retention.ms="$$retention"
+        done
+        echo "Topics:"
         kafka-topics --bootstrap-server kafka:29092 --list
 
   producer:
@@ -51,10 +52,7 @@ services:
     depends_on:
       kafka-setup:
         condition: service_completed_successfully
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      SYMBOLS: BTCUSDT
-      HEALTH_PORT: 8080
+    env_file: .env
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -90,20 +88,7 @@ services:
   flink-job:
     build:
       context: .
-      dockerfile_inline: |
-        FROM eclipse-temurin:25-jdk AS builder
-        WORKDIR /app
-        COPY gradlew .
-        COPY gradle/ gradle/
-        COPY settings.gradle build.gradle ./
-        COPY flink/jobs/build.gradle flink/jobs/build.gradle
-        COPY flink/jobs/src flink/jobs/src
-        # settings.gradle includes producer; create the dir so Gradle 9 doesn't reject it
-        RUN mkdir -p producer
-        RUN ./gradlew :flink-jobs:shadowJar --no-daemon
-
-        FROM flink:1.19.1-java17
-        COPY --from=builder /app/flink/jobs/build/libs/ohlcv-job.jar /opt/flink/usrlib/ohlcv-job.jar
+      dockerfile: flink/jobs/Dockerfile
     command: >
       flink run -d -m flink-jobmanager:8081 /opt/flink/usrlib/ohlcv-job.jar
     depends_on:
@@ -115,9 +100,7 @@ services:
         condition: service_completed_successfully
       clickhouse:
         condition: service_healthy
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      CLICKHOUSE_URL: jdbc:clickhouse://clickhouse:8123/binance
+    env_file: .env
     restart: on-failure
 
   # ── Storage ────────────────────────────────────────────────────────────────

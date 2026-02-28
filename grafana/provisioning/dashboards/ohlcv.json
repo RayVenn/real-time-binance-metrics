@@ -39,9 +39,9 @@
       "targets": [
         {
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto"},
-          "rawSql": "SELECT window_start AS time, open, high, low, close FROM binance.ohlcv WHERE symbol = 'BTCUSDT' AND $__dateFilter(window_start) ORDER BY window_start",
+          "rawSql": "SELECT window_start AS time, open, high, low, close FROM binance.ohlcv WHERE symbol = 'BTCUSDT' AND $__timeFilter(window_start) ORDER BY window_start",
           "refId": "A",
-          "format": "table"
+          "format": 1
         }
       ],
       "title": "BTC/USDT 1-Minute Candlestick",
@@ -78,9 +78,9 @@
       "targets": [
         {
           "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto"},
-          "rawSql": "SELECT window_start AS time, volume FROM binance.ohlcv WHERE symbol = 'BTCUSDT' AND $__dateFilter(window_start) ORDER BY window_start",
+          "rawSql": "SELECT window_start AS time, volume FROM binance.ohlcv WHERE symbol = 'BTCUSDT' AND $__timeFilter(window_start) ORDER BY window_start",
           "refId": "A",
-          "format": "table"
+          "format": 1
         }
       ],
       "title": "Volume (BTC)",
