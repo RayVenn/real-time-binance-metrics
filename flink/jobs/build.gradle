@@ -1,0 +1,40 @@
+plugins {
+    id 'java'
+    id 'com.gradleup.shadow' version '9.3.2'
+}
+
+// Flink 1.19 runs on Java 17; override the root Java 25 target for this subproject
+java {
+    sourceCompatibility = '17'
+    targetCompatibility = '17'
+}
+
+dependencies {
+    // Flink core — compileOnly (provided by the Flink cluster at runtime)
+    compileOnly 'org.apache.flink:flink-streaming-java:1.19.1'
+    compileOnly 'org.apache.flink:flink-clients:1.19.1'
+
+    // Connectors — included in the fat JAR
+    implementation 'org.apache.flink:flink-connector-kafka:3.2.0-1.19'
+    implementation 'org.apache.kafka:kafka-clients:3.6.0'
+    implementation 'org.apache.flink:flink-connector-jdbc:3.2.0-1.19'
+    // :all classifier bundles all HTTP transport deps into one JAR
+    implementation('com.clickhouse:clickhouse-jdbc:0.6.3:all') {
+        transitive = false
+    }
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+    implementation 'org.slf4j:slf4j-api:2.0.12'
+    runtimeOnly 'ch.qos.logback:logback-classic:1.5.6'
+}
+
+shadowJar {
+    archiveBaseName = 'ohlcv-job'
+    archiveClassifier = ''
+    mergeServiceFiles()
+    manifest {
+        attributes 'Main-Class': 'com.binance.flink.OhlcvJob'
+    }
+}
+
+// Make the default 'build' task produce the shadow JAR
+build.dependsOn shadowJar

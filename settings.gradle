@@ -1,0 +1,4 @@
+rootProject.name = 'binance-real-time'
+include 'producer'
+include 'flink-jobs'
+project(':flink-jobs').projectDir = file('flink/jobs')

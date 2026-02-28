@@ -1,6 +1,0 @@
-apiVersion: v2
-name: crypto-monitor
-description: Real-time crypto market data monitoring — Binance WebSocket producer to Kafka
-type: application
-version: 0.1.0
-appVersion: "0.1.0"
