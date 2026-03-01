@@ -1,5 +1,6 @@
 package com.binance.flink;
 
+import com.binance.flink.function.EmaFunction;
 import com.binance.flink.function.OhlcvAggregator;
 import com.binance.flink.function.OhlcvWindowFunction;
 import com.binance.flink.model.BinanceTrade;
@@ -82,12 +83,15 @@ public class OhlcvJob {
         DataStream<OhlcvBar> ohlcv = timedTrades
                 .keyBy(t -> canonicalSymbol(t.symbol) + "~ALL")
                 .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
-                .aggregate(new OhlcvAggregator(), new OhlcvWindowFunction());
+                .aggregate(new OhlcvAggregator(), new OhlcvWindowFunction())
+                // EMA state is maintained per symbol~source across consecutive bars
+                .keyBy(bar -> bar.symbol + "~" + bar.source)
+                .process(new EmaFunction());
 
         // ── Sink 1: ClickHouse via JDBC ───────────────────────────────────────
         ohlcv.addSink(JdbcSink.sink(
-                "INSERT INTO ohlcv (symbol, source, window_start, open, high, low, close, volume, vwap, buy_volume, sell_volume, trade_count) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO ohlcv (symbol, source, window_start, open, high, low, close, volume, vwap, buy_volume, sell_volume, ema10, trade_count) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (ps, bar) -> {
                     ps.setString(1, bar.symbol);
                     ps.setString(2, bar.source);
@@ -100,7 +104,8 @@ public class OhlcvJob {
                     ps.setDouble(9, bar.vwap);
                     ps.setDouble(10, bar.buyVolume);
                     ps.setDouble(11, bar.sellVolume);
-                    ps.setInt(12, bar.tradeCount);
+                    ps.setDouble(12, bar.ema10);
+                    ps.setInt(13, bar.tradeCount);
                 },
                 JdbcExecutionOptions.builder()
                         .withBatchSize(100)

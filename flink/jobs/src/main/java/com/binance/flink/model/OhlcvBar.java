@@ -14,5 +14,6 @@ public class OhlcvBar implements Serializable {
     public double vwap;
     public double buyVolume;
     public double sellVolume;
+    public double ema10;
     public int    tradeCount;
 }

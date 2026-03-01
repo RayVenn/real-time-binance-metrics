@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS binance.ohlcv
     vwap         Float64,
     buy_volume   Float64,
     sell_volume  Float64,
+    ema10        Float64,
     trade_count  UInt32
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(window_start)

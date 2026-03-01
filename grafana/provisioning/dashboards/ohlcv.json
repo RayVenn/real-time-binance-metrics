@@ -104,6 +104,67 @@
       ],
       "title": "Buy vs Sell Volume",
       "type": "barchart"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto"},
+      "fieldConfig": {
+        "defaults": {"custom": {"lineWidth": 2, "fillOpacity": 0}, "unit": "currencyUSD"},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "close"},
+            "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "gray"}}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "ema10"},
+            "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]
+          }
+        ]
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 30},
+      "id": 4,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "multi", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto"},
+          "rawSql": "SELECT window_start AS time, close, ema10 FROM binance.ohlcv WHERE source = 'ALL' AND $__timeFilter(window_start) ORDER BY window_start",
+          "refId": "A",
+          "format": 1
+        }
+      ],
+      "title": "Close Price vs EMA-10",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "purple"},
+          "custom": {"lineWidth": 2, "fillOpacity": 10},
+          "unit": "percentunit",
+          "min": -1,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 38},
+      "id": 5,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-crypto"},
+          "rawSql": "SELECT window_start AS time, (buy_volume - sell_volume) / (buy_volume + sell_volume) AS imbalance FROM binance.ohlcv WHERE source = 'ALL' AND (buy_volume + sell_volume) > 0 AND $__timeFilter(window_start) ORDER BY window_start",
+          "refId": "A",
+          "format": 1
+        }
+      ],
+      "title": "Buy/Sell Imbalance  (+1 = all buys  ·  −1 = all sells)",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",
@@ -115,5 +176,5 @@
   "timezone": "utc",
   "title": "BTC 1-Minute OHLCV",
   "uid": "btcusdt-ohlcv-1m",
-  "version": 9
+  "version": 10
 }
