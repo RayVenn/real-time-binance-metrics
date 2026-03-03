@@ -16,4 +16,6 @@ public class OhlcvBar implements Serializable {
     public double sellVolume;
     public double ema10;
     public int    tradeCount;
+    public double spreadUsd;  // binanceClose - coinbaseClose  (0 if not yet matched)
+    public double spreadBps;  // abs(spreadUsd) / midPrice * 10_000  (0 if not yet matched)
 }

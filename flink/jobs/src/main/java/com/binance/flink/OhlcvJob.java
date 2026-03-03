@@ -1,5 +1,6 @@
 package com.binance.flink;
 
+import com.binance.flink.function.ArbitrageDetector;
 import com.binance.flink.function.EmaFunction;
 import com.binance.flink.function.OhlcvAggregator;
 import com.binance.flink.function.OhlcvWindowFunction;
@@ -20,21 +21,18 @@ import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindo
 
 import java.sql.Timestamp;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 
 public class OhlcvJob {
 
-    private static final DateTimeFormatter FMT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneOffset.UTC);
-
     /**
      * Normalize symbol so trades from different exchanges combine into one key.
-     * e.g. BTCUSDT (Binance) and BTCUSD (Coinbase) both become BTCUSD.
+     * e.g. BTCUSDT (Binance) and BTC-USD (Coinbase) both become BTCUSD.
      */
     private static String canonicalSymbol(String symbol) {
-        return symbol.endsWith("USDT") ? symbol.substring(0, symbol.length() - 1) : symbol;
+        // Strip trailing T from USDT → USDC
+        if (symbol.endsWith("USDT")) symbol = symbol.substring(0, symbol.length() - 1);
+        // Remove hyphens: BTC-USD → BTCUSD
+        return symbol.replace("-", "");
     }
 
     public static void main(String[] args) throws Exception {
@@ -49,6 +47,13 @@ public class OhlcvJob {
                 "KAFKA_TOPIC", "crypto-trades");
         String timescaledbUrl = System.getenv().getOrDefault(
                 "TIMESCALEDB_URL", "jdbc:postgresql://timescaledb:5432/binance");
+
+        JdbcConnectionOptions jdbcOpts = new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                .withUrl(timescaledbUrl)
+                .withDriverName("org.postgresql.Driver")
+                .withUsername("postgres")
+                .withPassword("password")
+                .build();
 
         // ── Source ────────────────────────────────────────────────────────────
         KafkaSource<String> kafkaSource = KafkaSource.<String>builder()
@@ -69,7 +74,7 @@ public class OhlcvJob {
         DataStream<BinanceTrade> trades = rawStream.map(
                 json -> mapper.readValue(json, BinanceTrade.class));
 
-        // ── Watermark strategy (assigned once; both streams share it) ─────────
+        // ── Watermark strategy ────────────────────────────────────────────────
         WatermarkStrategy<BinanceTrade> watermarkStrategy = WatermarkStrategy
                 .<BinanceTrade>forBoundedOutOfOrderness(Duration.ofSeconds(5))
                 .withTimestampAssigner((trade, ts) -> trade.tradeTimeMs);
@@ -77,21 +82,26 @@ public class OhlcvJob {
         DataStream<BinanceTrade> timedTrades =
                 trades.assignTimestampsAndWatermarks(watermarkStrategy);
 
-        // ── Window + aggregate — all exchanges merged, keyed by canonical symbol ─
-        // Trades from all exchanges are combined in event-time order so open/close
-        // are truly cross-exchange accurate. source is set to "ALL" by the key format.
-        DataStream<OhlcvBar> ohlcv = timedTrades
-                .keyBy(t -> canonicalSymbol(t.symbol) + "~ALL")
+        // ── Per-exchange OHLCV keyed by canonical symbol + source ─────────────
+        DataStream<OhlcvBar> perExchangeOhlcv = timedTrades
+                .keyBy(t -> canonicalSymbol(t.symbol) + "~" + t.source)
                 .window(TumblingEventTimeWindows.of(Duration.ofMinutes(1)))
                 .aggregate(new OhlcvAggregator(), new OhlcvWindowFunction())
-                // EMA state is maintained per symbol~source across consecutive bars
                 .keyBy(bar -> bar.symbol + "~" + bar.source)
                 .process(new EmaFunction());
 
-        // ── Sink 1: TimescaleDB via JDBC ──────────────────────────────────────
-        ohlcv.addSink(JdbcSink.sink(
-                "INSERT INTO ohlcv (symbol, source, window_start, open, high, low, close, volume, vwap, buy_volume, sell_volume, ema10, trade_count) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        // ── Cross-exchange spread detection (BINANCE, COINBASE, KRAKEN) ──────
+        // Collect all 3 sources per window; emit when all arrive with spread populated
+        DataStream<OhlcvBar> spreadBars = perExchangeOhlcv
+                .keyBy(bar -> bar.symbol)
+                .process(new ArbitrageDetector());
+
+        // ── Sink 2: Write matched pairs to ohlcv (spread included) ───────────
+        spreadBars.addSink(JdbcSink.sink(
+                "INSERT INTO ohlcv (symbol, source, window_start, open, high, low, close, volume, vwap, buy_volume, sell_volume, ema10, trade_count, spread_usd, spread_bps) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                        + "ON CONFLICT (symbol, source, window_start) "
+                        + "DO UPDATE SET spread_usd = EXCLUDED.spread_usd, spread_bps = EXCLUDED.spread_bps",
                 (ps, bar) -> {
                     ps.setString(1, bar.symbol);
                     ps.setString(2, bar.source);
@@ -106,27 +116,16 @@ public class OhlcvJob {
                     ps.setDouble(11, bar.sellVolume);
                     ps.setDouble(12, bar.ema10);
                     ps.setInt(13, bar.tradeCount);
+                    ps.setDouble(14, bar.spreadUsd);
+                    ps.setDouble(15, bar.spreadBps);
                 },
                 JdbcExecutionOptions.builder()
-                        .withBatchSize(100)
-                        .withBatchIntervalMs(200)
+                        .withBatchSize(50)
+                        .withBatchIntervalMs(500)
                         .withMaxRetries(5)
                         .build(),
-                new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
-                        .withUrl(timescaledbUrl)
-                        .withDriverName("org.postgresql.Driver")
-                        .withUsername("postgres")
-                        .withPassword("password")
-                        .build()
+                jdbcOpts
         ));
-
-        // ── Sink 2: stdout ────────────────────────────────────────────────────
-        ohlcv.map(bar -> String.format(
-                "%s | %s | %s UTC | O=%10.2f  H=%10.2f  L=%10.2f  C=%10.2f  V=%10.5f  n=%d",
-                bar.source, bar.symbol,
-                FMT.format(Instant.ofEpochMilli(bar.windowStartMs)),
-                bar.open, bar.high, bar.low, bar.close, bar.volume, bar.tradeCount
-        )).print();
 
         env.execute("ohlcv-1m");
     }

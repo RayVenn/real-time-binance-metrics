@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS ohlcv (
     sell_volume  DOUBLE PRECISION  NOT NULL,
     ema10        DOUBLE PRECISION  NOT NULL,
     trade_count  INTEGER           NOT NULL,
+    spread_usd   DOUBLE PRECISION,
+    spread_bps   DOUBLE PRECISION,
     PRIMARY KEY (symbol, source, window_start)
 );
 

@@ -26,12 +26,12 @@
       "targets": [
         {
           "datasource": {"type": "postgres", "uid": "timescaledb-crypto"},
-          "rawSql": "SELECT window_start AS time, open, high, low, close FROM ohlcv WHERE source = 'ALL' AND symbol = '$symbol' AND $__timeFilter(window_start) ORDER BY window_start",
+          "rawSql": "SELECT window_start AS time, AVG(open) AS open, MAX(high) AS high, MIN(low) AS low, AVG(close) AS close FROM ohlcv WHERE symbol = '$symbol' AND $__timeFilter(window_start) GROUP BY window_start ORDER BY window_start",
           "refId": "A",
           "format": "time_series"
         }
       ],
-      "title": "$symbol 1-Min OHLCV",
+      "title": "$symbol 1-Min OHLCV (all exchanges)",
       "type": "candlestick"
     },
     {
@@ -53,12 +53,12 @@
       "targets": [
         {
           "datasource": {"type": "postgres", "uid": "timescaledb-crypto"},
-          "rawSql": "SELECT window_start AS time, vwap FROM ohlcv WHERE source = 'ALL' AND symbol = '$symbol' AND $__timeFilter(window_start) ORDER BY window_start",
+          "rawSql": "SELECT window_start AS time, SUM(vwap * volume) / NULLIF(SUM(volume), 0) AS vwap FROM ohlcv WHERE symbol = '$symbol' AND $__timeFilter(window_start) GROUP BY window_start ORDER BY window_start",
           "refId": "A",
           "format": "time_series"
         }
       ],
-      "title": "VWAP (All Exchanges)",
+      "title": "VWAP (all exchanges, volume-weighted)",
       "type": "timeseries"
     },
     {
@@ -97,12 +97,12 @@
       "targets": [
         {
           "datasource": {"type": "postgres", "uid": "timescaledb-crypto"},
-          "rawSql": "SELECT window_start AS time, buy_volume, sell_volume FROM ohlcv WHERE source = 'ALL' AND symbol = '$symbol' AND $__timeFilter(window_start) ORDER BY window_start",
+          "rawSql": "SELECT window_start AS time, SUM(buy_volume) AS buy_volume, SUM(sell_volume) AS sell_volume FROM ohlcv WHERE symbol = '$symbol' AND $__timeFilter(window_start) GROUP BY window_start ORDER BY window_start",
           "refId": "A",
           "format": "time_series"
         }
       ],
-      "title": "Buy vs Sell Volume",
+      "title": "Buy vs Sell Volume (all exchanges)",
       "type": "barchart"
     },
     {
@@ -129,12 +129,12 @@
       "targets": [
         {
           "datasource": {"type": "postgres", "uid": "timescaledb-crypto"},
-          "rawSql": "SELECT window_start AS time, close, ema10 FROM ohlcv WHERE source = 'ALL' AND symbol = '$symbol' AND $__timeFilter(window_start) ORDER BY window_start",
+          "rawSql": "SELECT window_start AS time, AVG(close) AS close, AVG(ema10) AS ema10 FROM ohlcv WHERE symbol = '$symbol' AND $__timeFilter(window_start) GROUP BY window_start ORDER BY window_start",
           "refId": "A",
           "format": "time_series"
         }
       ],
-      "title": "Close Price vs EMA-10",
+      "title": "Close Price vs EMA-10 (avg across exchanges)",
       "type": "timeseries"
     },
     {
@@ -158,12 +158,74 @@
       "targets": [
         {
           "datasource": {"type": "postgres", "uid": "timescaledb-crypto"},
-          "rawSql": "SELECT window_start AS time, (buy_volume - sell_volume) / NULLIF(buy_volume + sell_volume, 0) AS imbalance FROM ohlcv WHERE source = 'ALL' AND symbol = '$symbol' AND $__timeFilter(window_start) ORDER BY window_start",
+          "rawSql": "SELECT window_start AS time, (SUM(buy_volume) - SUM(sell_volume)) / NULLIF(SUM(buy_volume) + SUM(sell_volume), 0) AS imbalance FROM ohlcv WHERE symbol = '$symbol' AND $__timeFilter(window_start) GROUP BY window_start ORDER BY window_start",
           "refId": "A",
           "format": "time_series"
         }
       ],
       "title": "Buy/Sell Imbalance  (+1 = all buys  ·  −1 = all sells)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "timescaledb-crypto"},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"lineWidth": 2, "fillOpacity": 10},
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 0}
+            ]
+          },
+          "color": {"mode": "thresholds"}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 46},
+      "id": 6,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "timescaledb-crypto"},
+          "rawSql": "SELECT window_start AS time, spread_usd FROM ohlcv WHERE source = 'BINANCE' AND symbol = '$symbol' AND spread_usd IS NOT NULL AND $__timeFilter(window_start) ORDER BY window_start",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ],
+      "title": "Spread (Binance − Coinbase, USD)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "timescaledb-crypto"},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"lineWidth": 2, "fillOpacity": 10},
+          "unit": "none",
+          "decimals": 1,
+          "color": {"mode": "fixed", "fixedColor": "orange"}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 46},
+      "id": 7,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "timescaledb-crypto"},
+          "rawSql": "SELECT window_start AS time, spread_bps FROM ohlcv WHERE source = 'BINANCE' AND symbol = '$symbol' AND spread_bps IS NOT NULL AND $__timeFilter(window_start) ORDER BY window_start",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ],
+      "title": "Spread (basis points)",
       "type": "timeseries"
     }
   ],
@@ -194,5 +256,5 @@
   "timezone": "utc",
   "title": "Crypto 1-Minute OHLCV",
   "uid": "btcusdt-ohlcv-1m",
-  "version": 11
+  "version": 13
 }

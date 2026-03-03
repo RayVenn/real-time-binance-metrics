@@ -24,6 +24,10 @@ public class Config {
     public final String coinbaseSymbols    = env("COINBASE_SYMBOLS",     "BTC-USD");
     public final int    coinbaseHealthPort = Integer.parseInt(env("COINBASE_HEALTH_PORT", "8082"));
 
+    // ── Kraken ────────────────────────────────────────────────────────────────
+    public final String krakenWsUrl     = env("KRAKEN_WS_URL",     "wss://ws.kraken.com/v2");
+    public final String krakenSymbols   = env("KRAKEN_SYMBOLS",    "BTC/USD");
+
     public List<String> symbolsList() {
         return Arrays.stream(symbols.split(","))
                 .map(String::trim)
@@ -34,6 +38,13 @@ public class Config {
 
     public List<String> coinbaseSymbolsList() {
         return Arrays.stream(coinbaseSymbols.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+    }
+
+    public List<String> krakenSymbolsList() {
+        return Arrays.stream(krakenSymbols.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .toList();
