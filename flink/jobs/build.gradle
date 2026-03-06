@@ -29,9 +29,22 @@ shadowJar {
     archiveClassifier = ''
     mergeServiceFiles()
     manifest {
-        attributes 'Main-Class': 'com.binance.flink.OhlcvJob'
+        attributes 'Main-Class': 'com.marketdata.flink.OhlcvJob'
     }
 }
 
-// Make the default 'build' task produce the shadow JAR
+def shadowJarType = tasks.getByName('shadowJar').class
+task shadowJarTradeStream(type: shadowJarType) {
+    archiveBaseName = 'trade-stream-job'
+    archiveClassifier = ''
+    from sourceSets.main.output
+    configurations = [project.configurations.runtimeClasspath]
+    mergeServiceFiles()
+    manifest {
+        attributes 'Main-Class': 'com.marketdata.flink.TradeStreamJob'
+    }
+}
+
+// Make the default 'build' task produce both shadow JARs
 build.dependsOn shadowJar
+build.dependsOn shadowJarTradeStream

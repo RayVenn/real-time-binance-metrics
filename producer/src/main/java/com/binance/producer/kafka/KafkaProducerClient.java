@@ -2,6 +2,7 @@ package com.binance.producer.kafka;
 
 import com.binance.producer.Config;
 import com.binance.producer.model.DlqMessage;
+import com.binance.producer.model.OrderBookSnapshot;
 import com.binance.producer.model.Trade;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -21,6 +22,7 @@ public class KafkaProducerClient {
     private final KafkaProducer<String, String> producer;
     private final String                        topic;
     private final String                        dlqTopic;
+    private final String                        orderBookTopic;
     private final ObjectMapper                  mapper   = new ObjectMapper();
     private final AtomicInteger                 produced = new AtomicInteger(0);
 
@@ -34,9 +36,10 @@ public class KafkaProducerClient {
         props.put(ProducerConfig.RETRY_BACKOFF_MS_CONFIG,    500);
         props.put(ProducerConfig.LINGER_MS_CONFIG,           5);
 
-        this.producer  = new KafkaProducer<>(props);
-        this.topic     = config.kafkaTopic;
-        this.dlqTopic  = config.kafkaDlqTopic;
+        this.producer       = new KafkaProducer<>(props);
+        this.topic          = config.kafkaTopic;
+        this.dlqTopic       = config.kafkaDlqTopic;
+        this.orderBookTopic = config.kafkaOrderBookTopic;
     }
 
     public void produceTrade(Trade trade) {
@@ -48,6 +51,17 @@ public class KafkaProducerClient {
             produced.incrementAndGet();
         } catch (Exception e) {
             log.error("kafka.produce_error error={}", e.getMessage());
+        }
+    }
+
+    public void produceOrderBook(OrderBookSnapshot snapshot) {
+        try {
+            String json = mapper.writeValueAsString(snapshot);
+            producer.send(new ProducerRecord<>(orderBookTopic, snapshot.symbol, json), (meta, err) -> {
+                if (err != null) log.error("kafka.orderbook_delivery_failed error={}", err.getMessage());
+            });
+        } catch (Exception e) {
+            log.error("kafka.orderbook_produce_error error={}", e.getMessage());
         }
     }
 

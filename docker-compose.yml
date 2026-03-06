@@ -83,7 +83,7 @@ services:
     environment:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 2
+        taskmanager.numberOfTaskSlots: 4
 
   flink-job:
     build:
@@ -91,6 +91,24 @@ services:
       dockerfile: flink/jobs/Dockerfile
     command: >
       flink run -d -m flink-jobmanager:8081 /opt/flink/usrlib/ohlcv-job.jar
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+      flink-taskmanager:
+        condition: service_started
+      kafka-setup:
+        condition: service_completed_successfully
+      timescaledb:
+        condition: service_healthy
+    env_file: .env
+    restart: on-failure
+
+  flink-job-trade:
+    build:
+      context: .
+      dockerfile: flink/jobs/Dockerfile
+    command: >
+      flink run -d -m flink-jobmanager:8081 /opt/flink/usrlib/trade-stream-job.jar
     depends_on:
       flink-jobmanager:
         condition: service_healthy
@@ -122,25 +140,6 @@ services:
       timeout: 5s
       retries: 10
 
-  # ── Load generator (docker compose --profile load up -d) ──────────────────
-  # Pumps synthetic trades into crypto-trades at LOAD_TRADES_PER_SECOND rate.
-  # Symbols: BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT (random walk price simulation).
-
-  load-generator:
-    build:
-      context: .
-      dockerfile: load-generator/Dockerfile
-    profiles: [load]
-    depends_on:
-      kafka-setup:
-        condition: service_completed_successfully
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      KAFKA_TOPIC: crypto-trades
-      LOAD_SYMBOLS: BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT
-      LOAD_TRADES_PER_SECOND: "10000"
-    restart: unless-stopped
-
   # ── Monitoring (docker compose --profile monitoring up -d) ─────────────────
 
   grafana:
@@ -156,22 +155,6 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - grafana-data:/var/lib/grafana
 
-  pgadmin:
-    image: dpage/pgadmin4:9
-    profiles: [monitoring]
-    ports:
-      - "5050:80"
-    depends_on:
-      - timescaledb
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@local.dev
-      PGADMIN_DEFAULT_PASSWORD: admin
-      PGADMIN_CONFIG_SERVER_MODE: "False"
-    volumes:
-      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
-      - pgadmin-data:/var/lib/pgadmin
-
 volumes:
   timescaledb-data:
   grafana-data:
-  pgadmin-data:

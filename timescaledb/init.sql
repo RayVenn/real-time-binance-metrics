@@ -18,3 +18,35 @@ CREATE TABLE IF NOT EXISTS ohlcv (
 );
 
 SELECT create_hypertable('ohlcv', 'window_start', if_not_exists => TRUE);
+
+CREATE TABLE IF NOT EXISTS trades (
+    trade_time       TIMESTAMPTZ       NOT NULL,
+    symbol           VARCHAR(20)       NOT NULL,
+    source           VARCHAR(20)       NOT NULL,
+    trade_id         BIGINT            NOT NULL,
+    price            DOUBLE PRECISION  NOT NULL,
+    quantity         DOUBLE PRECISION  NOT NULL,
+    side             VARCHAR(4)        NOT NULL,
+    ingestion_time   TIMESTAMPTZ       NOT NULL,
+    latency_ms       BIGINT            NOT NULL,
+    PRIMARY KEY (symbol, source, trade_id, trade_time)
+);
+
+SELECT create_hypertable('trades', 'trade_time', if_not_exists => TRUE);
+
+CREATE INDEX IF NOT EXISTS trades_symbol_time_idx
+    ON trades (symbol, trade_time DESC);
+
+CREATE TABLE IF NOT EXISTS orderbook_snapshots (
+    snapshot_time    TIMESTAMPTZ       NOT NULL,
+    symbol           VARCHAR(20)       NOT NULL,
+    source           VARCHAR(20)       NOT NULL,
+    bids             JSONB             NOT NULL,
+    asks             JSONB             NOT NULL,
+    PRIMARY KEY (symbol, source, snapshot_time)
+);
+
+SELECT create_hypertable('orderbook_snapshots', 'snapshot_time', if_not_exists => TRUE);
+
+CREATE INDEX IF NOT EXISTS orderbook_latest_idx
+    ON orderbook_snapshots (symbol, source, snapshot_time DESC);

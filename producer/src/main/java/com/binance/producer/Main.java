@@ -29,6 +29,10 @@ public class Main {
                 health.setWsConnected(true);
                 log.debug("binance.trade symbol={} price={} latency_ms={}", trade.symbol, trade.price, trade.latencyMs);
             },
+            snapshot -> {
+                kafka.produceOrderBook(snapshot);
+                log.debug("binance.orderbook symbol={} bids={} asks={}", snapshot.symbol, snapshot.bids.size(), snapshot.asks.size());
+            },
             raw -> {
                 kafka.produceDlq(raw, "ParseError");
                 health.incrementDlq();
@@ -43,6 +47,10 @@ public class Main {
                 health.setWsConnected(true);
                 log.debug("coinbase.trade symbol={} price={} latency_ms={}", trade.symbol, trade.price, trade.latencyMs);
             },
+            snapshot -> {
+                kafka.produceOrderBook(snapshot);
+                log.debug("coinbase.orderbook symbol={} bids={} asks={}", snapshot.symbol, snapshot.bids.size(), snapshot.asks.size());
+            },
             raw -> {
                 kafka.produceDlq(raw, "ParseError");
                 health.incrementDlq();
@@ -56,6 +64,10 @@ public class Main {
                 health.incrementProduced();
                 health.setWsConnected(true);
                 log.debug("kraken.trade symbol={} price={} latency_ms={}", trade.symbol, trade.price, trade.latencyMs);
+            },
+            snapshot -> {
+                kafka.produceOrderBook(snapshot);
+                log.debug("kraken.orderbook symbol={} bids={} asks={}", snapshot.symbol, snapshot.bids.size(), snapshot.asks.size());
             },
             raw -> {
                 kafka.produceDlq(raw, "ParseError");

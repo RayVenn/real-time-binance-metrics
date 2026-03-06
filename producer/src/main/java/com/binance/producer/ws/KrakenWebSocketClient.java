@@ -1,6 +1,7 @@
 package com.binance.producer.ws;
 
 import com.binance.producer.Config;
+import com.binance.producer.model.OrderBookSnapshot;
 import com.binance.producer.model.Trade;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,7 +12,9 @@ import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.TreeMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -21,20 +24,27 @@ public class KrakenWebSocketClient extends WebSocketClient {
 
     private static final Logger log = LoggerFactory.getLogger(KrakenWebSocketClient.class);
 
-    private final Config                   config;
-    private final Consumer<Trade>          onTrade;
-    private final Consumer<String>         onRawError;
-    private final ObjectMapper             mapper    = new ObjectMapper();
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private       double                   currentDelay;
-    private volatile boolean               closed    = false;
+    private final Config                         config;
+    private final Consumer<Trade>                onTrade;
+    private final Consumer<OrderBookSnapshot>    onSnapshot;
+    private final Consumer<String>               onRawError;
+    private final ObjectMapper                   mapper    = new ObjectMapper();
+    private final ScheduledExecutorService       scheduler = Executors.newSingleThreadScheduledExecutor();
+    private       double                         currentDelay;
+    private volatile boolean                     closed    = false;
+
+    // In-memory order book (descending bids, ascending asks)
+    private final TreeMap<Double, Double> bids = new TreeMap<>((a, b) -> Double.compare(b, a));
+    private final TreeMap<Double, Double> asks = new TreeMap<>();
 
     public KrakenWebSocketClient(Config config,
                                   Consumer<Trade> onTrade,
+                                  Consumer<OrderBookSnapshot> onSnapshot,
                                   Consumer<String> onRawError) {
         super(URI.create(config.krakenWsUrl));
         this.config       = config;
         this.onTrade      = onTrade;
+        this.onSnapshot   = onSnapshot;
         this.onRawError   = onRawError;
         this.currentDelay = config.reconnectDelaySec;
     }
@@ -43,6 +53,8 @@ public class KrakenWebSocketClient extends WebSocketClient {
     public void onOpen(ServerHandshake handshake) {
         log.info("ws.connected uri={}", getURI());
         currentDelay = config.reconnectDelaySec;
+        bids.clear();
+        asks.clear();
         sendSubscribe();
     }
 
@@ -52,8 +64,9 @@ public class KrakenWebSocketClient extends WebSocketClient {
                 .map(s -> "\"" + s + "\"")
                 .reduce((a, b) -> a + "," + b)
                 .orElse("");
-        String msg = "{\"method\":\"subscribe\",\"params\":{\"channel\":\"trade\",\"symbol\":[" + symbolArray + "]}}";
-        send(msg);
+        // Subscribe to trades and order book on the same connection
+        send("{\"method\":\"subscribe\",\"params\":{\"channel\":\"trade\",\"symbol\":[" + symbolArray + "]}}");
+        send("{\"method\":\"subscribe\",\"params\":{\"channel\":\"book\",\"symbol\":[" + symbolArray + "],\"depth\":20}}");
         log.info("ws.subscribed symbols={}", symbols);
     }
 
@@ -63,17 +76,10 @@ public class KrakenWebSocketClient extends WebSocketClient {
             JsonNode root    = mapper.readTree(raw);
             String   channel = root.path("channel").asText("");
 
-            // Ignore non-trade messages (heartbeat, subscription acks, status)
-            if (!channel.equals("trade")) return;
-
-            // "type" is "snapshot" or "update" — process both
-            JsonNode data = root.path("data");
-            if (!data.isArray()) return;
-
-            for (JsonNode t : data) {
-                Trade trade = parseTrade(t);
-                trade.enrich();
-                onTrade.accept(trade);
+            switch (channel) {
+                case "trade" -> handleTrades(root);
+                case "book"  -> handleOrderBook(root);
+                // heartbeat, status, subscription acks — ignore
             }
         } catch (Exception e) {
             log.warn("ws.parse_error error={}", e.getMessage());
@@ -81,28 +87,85 @@ public class KrakenWebSocketClient extends WebSocketClient {
         }
     }
 
-    private Trade parseTrade(JsonNode t) {
-        Trade trade = new Trade();
+    private void handleTrades(JsonNode root) {
+        JsonNode data = root.path("data");
+        if (!data.isArray()) return;
+        for (JsonNode t : data) {
+            Trade trade = parseTrade(t);
+            trade.enrich();
+            onTrade.accept(trade);
+        }
+    }
 
-        // Normalize: "BTC/USD" → "BTCUSD", "XBT/USD" → "XBTUSD" → then XBT→BTC
-        String rawSymbol   = t.path("symbol").asText("").replace("/", "");
-        trade.symbol       = rawSymbol.replace("XBT", "BTC");
+    private Trade parseTrade(JsonNode t) {
+        Trade trade    = new Trade();
+        String rawSym  = t.path("symbol").asText("").replace("/", "");
+        trade.symbol       = rawSym.replace("XBT", "BTC");
         trade.price        = t.path("price").asDouble(0);
         trade.quantity     = t.path("qty").asDouble(0);
         trade.tradeId      = t.path("trade_id").asLong(0);
         trade.eventType    = "trade";
         trade.source       = "KRAKEN";
-
         String timeStr     = t.path("timestamp").asText("");
-        trade.tradeTimeMs  = timeStr.isEmpty()
-                ? System.currentTimeMillis()
-                : Instant.parse(timeStr).toEpochMilli();
+        trade.tradeTimeMs  = timeStr.isEmpty() ? System.currentTimeMillis() : Instant.parse(timeStr).toEpochMilli();
         trade.eventTimeMs  = trade.tradeTimeMs;
-
-        // Kraken side "buy" = buyer is aggressor (taker) → maker is seller → isBuyerMaker = false
         trade.isBuyerMaker = "sell".equals(t.path("side").asText(""));
-
         return trade;
+    }
+
+    private void handleOrderBook(JsonNode root) {
+        String type      = root.path("type").asText("");
+        JsonNode dataArr = root.path("data");
+        if (!dataArr.isArray()) return;
+
+        for (JsonNode data : dataArr) {
+            String rawSymbol = data.path("symbol").asText("").replace("/", "");
+            String symbol    = rawSymbol.replace("XBT", "BTC");
+
+            if (type.equals("snapshot")) {
+                bids.clear();
+                asks.clear();
+                applyLevels(bids, data.path("bids"), false);
+                applyLevels(asks, data.path("asks"), false);
+            } else {
+                applyLevels(bids, data.path("bids"), true);
+                applyLevels(asks, data.path("asks"), true);
+            }
+
+            String timeStr     = data.path("timestamp").asText("");
+            long   timestampMs = timeStr.isEmpty()
+                    ? System.currentTimeMillis()
+                    : Instant.parse(timeStr).toEpochMilli();
+
+            OrderBookSnapshot snapshot = new OrderBookSnapshot();
+            snapshot.source      = "KRAKEN";
+            snapshot.symbol      = symbol;
+            snapshot.timestampMs = timestampMs;
+            snapshot.bids        = toList(bids, 20);
+            snapshot.asks        = toList(asks, 20);
+            onSnapshot.accept(snapshot);
+        }
+    }
+
+    // Kraken entry: {"price":62000.0,"qty":0.5}
+    private void applyLevels(TreeMap<Double, Double> book, JsonNode array, boolean isDelta) {
+        if (!array.isArray()) return;
+        for (JsonNode entry : array) {
+            double price = entry.path("price").asDouble();
+            double qty   = entry.path("qty").asDouble();
+            if (isDelta && qty == 0.0) book.remove(price);
+            else                       book.put(price, qty);
+        }
+    }
+
+    private List<OrderBookSnapshot.PriceLevel> toList(TreeMap<Double, Double> book, int limit) {
+        List<OrderBookSnapshot.PriceLevel> levels = new ArrayList<>();
+        int count = 0;
+        for (var e : book.entrySet()) {
+            if (count++ >= limit) break;
+            levels.add(new OrderBookSnapshot.PriceLevel(e.getKey(), e.getValue()));
+        }
+        return levels;
     }
 
     @Override

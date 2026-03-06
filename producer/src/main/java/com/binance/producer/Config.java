@@ -8,6 +8,7 @@ public class Config {
     public final String bootstrapServers     = env("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092");
     public final String kafkaTopic           = env("KAFKA_TOPIC",             "crypto-trades");
     public final String kafkaDlqTopic        = env("KAFKA_DLQ_TOPIC",         "crypto-trades-dlq");
+    public final String kafkaOrderBookTopic  = env("KAFKA_ORDERBOOK_TOPIC",   "crypto-orderbook");
     public final int    kafkaFlushEvery      = Integer.parseInt(env("KAFKA_FLUSH_EVERY", "100"));
 
     // ── Reconnection (shared) ─────────────────────────────────────────────────
@@ -15,9 +16,10 @@ public class Config {
     public final double maxReconnectDelaySec = Double.parseDouble(env("MAX_RECONNECT_DELAY_S", "60.0"));
 
     // ── Binance ───────────────────────────────────────────────────────────────
-    public final String binanceWsUrl  = env("BINANCE_WS_URL", "wss://data-stream.binance.vision/stream");
-    public final String symbols       = env("SYMBOLS",        "BTCUSDT");
-    public final int    healthPort    = Integer.parseInt(env("HEALTH_PORT", "8080"));
+    public final String binanceWsUrl        = env("BINANCE_WS_URL",        "wss://data-stream.binance.vision/stream");
+    public final String symbols             = env("SYMBOLS",               "BTCUSDT");
+    public final String binanceDepthStreams = env("BINANCE_DEPTH_STREAMS", "btcusdt@depth20@100ms");
+    public final int    healthPort          = Integer.parseInt(env("HEALTH_PORT", "8080"));
 
     // ── Coinbase ──────────────────────────────────────────────────────────────
     public final String coinbaseWsUrl      = env("COINBASE_WS_URL",      "wss://advanced-trade-ws.coinbase.com");

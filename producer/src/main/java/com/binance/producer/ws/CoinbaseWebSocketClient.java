@@ -1,6 +1,7 @@
 package com.binance.producer.ws;
 
 import com.binance.producer.Config;
+import com.binance.producer.model.OrderBookSnapshot;
 import com.binance.producer.model.Trade;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,7 +12,9 @@ import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.TreeMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -21,21 +24,27 @@ public class CoinbaseWebSocketClient extends WebSocketClient {
 
     private static final Logger log = LoggerFactory.getLogger(CoinbaseWebSocketClient.class);
 
-    private final Config                   config;
-    private final Consumer<Trade>          onTrade;
-    private final Consumer<String>         onRawError;
-    private final ObjectMapper             mapper    = new ObjectMapper();
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private       double                   currentDelay;
-    private volatile boolean               closed    = false;
+    private final Config                         config;
+    private final Consumer<Trade>                onTrade;
+    private final Consumer<OrderBookSnapshot>    onSnapshot;
+    private final Consumer<String>               onRawError;
+    private final ObjectMapper                   mapper    = new ObjectMapper();
+    private final ScheduledExecutorService       scheduler = Executors.newSingleThreadScheduledExecutor();
+    private       double                         currentDelay;
+    private volatile boolean                     closed    = false;
 
+    // In-memory order book (descending bids, ascending asks)
+    private final TreeMap<Double, Double> bids = new TreeMap<>((a, b) -> Double.compare(b, a));
+    private final TreeMap<Double, Double> asks = new TreeMap<>();
 
     public CoinbaseWebSocketClient(Config config,
                                    Consumer<Trade> onTrade,
+                                   Consumer<OrderBookSnapshot> onSnapshot,
                                    Consumer<String> onRawError) {
         super(URI.create(config.coinbaseWsUrl));
         this.config       = config;
         this.onTrade      = onTrade;
+        this.onSnapshot   = onSnapshot;
         this.onRawError   = onRawError;
         this.currentDelay = config.reconnectDelaySec;
     }
@@ -44,17 +53,20 @@ public class CoinbaseWebSocketClient extends WebSocketClient {
     public void onOpen(ServerHandshake handshake) {
         log.info("ws.connected uri={}", getURI());
         currentDelay = config.reconnectDelaySec;
+        bids.clear();
+        asks.clear();
         sendSubscribe();
     }
 
     private void sendSubscribe() {
-        List<String> symbols = config.coinbaseSymbolsList(); // e.g. ["BTC-USD"]
+        List<String> symbols = config.coinbaseSymbolsList();
         String productIds = symbols.stream()
                 .map(s -> "\"" + s + "\"")
                 .reduce((a, b) -> a + "," + b)
                 .orElse("");
-        String msg = "{\"type\":\"subscribe\",\"product_ids\":[" + productIds + "],\"channel\":\"market_trades\"}";
-        send(msg);
+        // Subscribe to trades and order book on the same connection
+        send("{\"type\":\"subscribe\",\"product_ids\":[" + productIds + "],\"channel\":\"market_trades\"}");
+        send("{\"type\":\"subscribe\",\"product_ids\":[" + productIds + "],\"channel\":\"level2\"}");
         log.info("ws.subscribed products={}", symbols);
     }
 
@@ -64,20 +76,10 @@ public class CoinbaseWebSocketClient extends WebSocketClient {
             JsonNode root    = mapper.readTree(raw);
             String   channel = root.path("channel").asText("");
 
-            // Ignore non-trade channel messages (subscriptions, heartbeats)
-            if (!channel.equals("market_trades")) return;
-
-            JsonNode events = root.path("events");
-            if (!events.isArray()) return;
-
-            for (JsonNode event : events) {
-                JsonNode trades = event.path("trades");
-                if (!trades.isArray()) continue;
-                for (JsonNode t : trades) {
-                    Trade trade = parseTrade(t);
-                    trade.enrich();
-                    onTrade.accept(trade);
-                }
+            switch (channel) {
+                case "market_trades" -> handleTrades(root);
+                case "l2_data"       -> handleOrderBook(root);
+                // subscriptions, heartbeats — ignore
             }
         } catch (Exception e) {
             log.warn("ws.parse_error error={}", e.getMessage());
@@ -85,10 +87,22 @@ public class CoinbaseWebSocketClient extends WebSocketClient {
         }
     }
 
+    private void handleTrades(JsonNode root) {
+        JsonNode events = root.path("events");
+        if (!events.isArray()) return;
+        for (JsonNode event : events) {
+            JsonNode trades = event.path("trades");
+            if (!trades.isArray()) continue;
+            for (JsonNode t : trades) {
+                Trade trade = parseTrade(t);
+                trade.enrich();
+                onTrade.accept(trade);
+            }
+        }
+    }
+
     private Trade parseTrade(JsonNode t) {
         Trade trade = new Trade();
-
-        // Normalize product_id: "BTC-USD" → "BTCUSD"
         trade.symbol       = t.path("product_id").asText("").replace("-", "");
         trade.price        = Double.parseDouble(t.path("price").asText("0"));
         trade.quantity     = Double.parseDouble(t.path("size").asText("0"));
@@ -96,15 +110,61 @@ public class CoinbaseWebSocketClient extends WebSocketClient {
         trade.eventTimeMs  = System.currentTimeMillis();
         trade.eventType    = "trade";
         trade.source       = "COINBASE";
-
-        // Parse ISO8601 time string to epoch millis
-        String timeStr = t.path("time").asText("");
+        String timeStr     = t.path("time").asText("");
         trade.tradeTimeMs  = timeStr.isEmpty() ? trade.eventTimeMs : Instant.parse(timeStr).toEpochMilli();
-
-        // Coinbase side: "BUY" = aggressor is buyer → isBuyerMaker = false
         trade.isBuyerMaker = t.path("side").asText("").equals("SELL");
-
         return trade;
+    }
+
+    private void handleOrderBook(JsonNode root) {
+        JsonNode events = root.path("events");
+        if (!events.isArray()) return;
+
+        for (JsonNode event : events) {
+            String type      = event.path("type").asText("");
+            String productId = event.path("product_id").asText("");
+            String symbol    = productId.replace("-", "");
+
+            if (type.equals("snapshot")) {
+                bids.clear();
+                asks.clear();
+            }
+
+            JsonNode updates = event.path("updates");
+            if (!updates.isArray()) continue;
+
+            for (JsonNode entry : updates) {
+                String side     = entry.path("side").asText("");
+                double price    = Double.parseDouble(entry.path("price_level").asText("0"));
+                double quantity = Double.parseDouble(entry.path("new_quantity").asText("0"));
+                TreeMap<Double, Double> book = side.equals("bid") ? bids : asks;
+                if (quantity == 0.0) book.remove(price);
+                else                 book.put(price, quantity);
+            }
+
+            String timeStr     = event.path("time").asText("");
+            long   timestampMs = timeStr.isEmpty()
+                    ? System.currentTimeMillis()
+                    : Instant.parse(timeStr).toEpochMilli();
+
+            OrderBookSnapshot snapshot = new OrderBookSnapshot();
+            snapshot.source      = "COINBASE";
+            snapshot.symbol      = symbol;
+            snapshot.timestampMs = timestampMs;
+            snapshot.bids        = toList(bids, 20);
+            snapshot.asks        = toList(asks, 20);
+            onSnapshot.accept(snapshot);
+        }
+    }
+
+    private List<OrderBookSnapshot.PriceLevel> toList(TreeMap<Double, Double> book, int limit) {
+        List<OrderBookSnapshot.PriceLevel> levels = new ArrayList<>();
+        int count = 0;
+        for (var e : book.entrySet()) {
+            if (count++ >= limit) break;
+            levels.add(new OrderBookSnapshot.PriceLevel(e.getKey(), e.getValue()));
+        }
+        return levels;
     }
 
     @Override
