@@ -76,7 +76,8 @@ metadata:
 spec:
   selector:
     app: producer
-  type: ClusterIP
+  type: NodePort
   ports:
     - port: 8080
       targetPort: 8080
+      nodePort: {{ .Values.producer.nodePort }}

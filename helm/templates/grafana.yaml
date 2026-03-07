@@ -65,9 +65,11 @@ spec:
             - name: data
               mountPath: /var/lib/grafana
             - name: datasources
-              mountPath: /etc/grafana/provisioning/datasources
+              mountPath: /etc/grafana/provisioning/datasources/timescaledb.yaml
+              subPath: timescaledb.yaml
             - name: dashboard-provider
-              mountPath: /etc/grafana/provisioning/dashboards
+              mountPath: /etc/grafana/provisioning/dashboards/dashboard.yaml
+              subPath: dashboard.yaml
             - name: dashboard-json
               mountPath: /etc/grafana/provisioning/dashboards/ohlcv.json
               subPath: ohlcv.json

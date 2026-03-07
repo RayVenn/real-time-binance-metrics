@@ -72,7 +72,8 @@ metadata:
 spec:
   selector:
     app: timescaledb
-  type: ClusterIP
+  type: NodePort
   ports:
     - port: 5432
       targetPort: 5432
+      nodePort: {{ .Values.timescaledb.nodePort }}

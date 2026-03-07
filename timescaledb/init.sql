@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+
 CREATE TABLE IF NOT EXISTS ohlcv (
     symbol       VARCHAR(20)       NOT NULL,
     source       VARCHAR(20)       NOT NULL,

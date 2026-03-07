@@ -15,6 +15,7 @@ spec:
       labels:
         app: kafka
     spec:
+      enableServiceLinks: false
       containers:
         - name: kafka
           image: {{ .Values.images.kafka }}

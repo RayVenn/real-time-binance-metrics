@@ -20,7 +20,7 @@ spec:
         - name: flink-jobmanager
           image: {{ .Values.images.flinkJobs.repository }}:{{ .Values.images.flinkJobs.tag }}
           imagePullPolicy: {{ .Values.images.flinkJobs.pullPolicy }}
-          command: [jobmanager]
+          args: [jobmanager]
           ports:
             - containerPort: 8081
             - containerPort: 6123
@@ -47,14 +47,18 @@ metadata:
 spec:
   selector:
     app: flink-jobmanager
-  type: ClusterIP
+  type: NodePort
   ports:
     - name: rest
       port: 8081
       targetPort: 8081
+      nodePort: {{ .Values.flink.nodePort }}
     - name: rpc
       port: 6123
       targetPort: 6123
+    - name: blob
+      port: 6124
+      targetPort: 6124
 ---
 # ── Flink TaskManager ────────────────────────────────────────────────────────
 apiVersion: apps/v1
@@ -82,7 +86,7 @@ spec:
         - name: flink-taskmanager
           image: {{ .Values.images.flinkJobs.repository }}:{{ .Values.images.flinkJobs.tag }}
           imagePullPolicy: {{ .Values.images.flinkJobs.pullPolicy }}
-          command: [taskmanager]
+          args: [taskmanager]
           env:
             - name: FLINK_PROPERTIES
               value: |
@@ -114,7 +118,15 @@ spec:
         - name: submit
           image: {{ .Values.images.flinkJobs.repository }}:{{ .Values.images.flinkJobs.tag }}
           imagePullPolicy: {{ .Values.images.flinkJobs.pullPolicy }}
-          command: [flink, run, -d, -m, flink-jobmanager:8081, /opt/flink/usrlib/ohlcv-job.jar]
+          command:
+            - bash
+            - -c
+            - |
+              if flink list -m flink-jobmanager:8081 2>/dev/null | grep -q "ohlcv-1m"; then
+                echo "ohlcv-1m already running, skipping submission"
+              else
+                flink run -d -m flink-jobmanager:8081 /opt/flink/usrlib/ohlcv-job.jar
+              fi
 ---
 # ── Job submission: Trade stream pipeline ────────────────────────────────────
 apiVersion: batch/v1
@@ -141,4 +153,12 @@ spec:
         - name: submit
           image: {{ .Values.images.flinkJobs.repository }}:{{ .Values.images.flinkJobs.tag }}
           imagePullPolicy: {{ .Values.images.flinkJobs.pullPolicy }}
-          command: [flink, run, -d, -m, flink-jobmanager:8081, /opt/flink/usrlib/trade-stream-job.jar]
+          command:
+            - bash
+            - -c
+            - |
+              if flink list -m flink-jobmanager:8081 2>/dev/null | grep -q "trade-stream"; then
+                echo "trade-stream already running, skipping submission"
+              else
+                flink run -d -m flink-jobmanager:8081 /opt/flink/usrlib/trade-stream-job.jar
+              fi

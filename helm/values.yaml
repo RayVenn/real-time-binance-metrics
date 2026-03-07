@@ -24,6 +24,7 @@ timescaledb:
   username: postgres
   password: password
   storage: 5Gi
+  nodePort: 30432
 
 producer:
   binance:
@@ -45,9 +46,11 @@ producer:
   reconnect:
     delayS: "5"
     maxDelayS: "60"
+  nodePort: 30080
 
 flink:
   taskSlots: 4
+  nodePort: 30081
 
 grafana:
   adminPassword: admin
